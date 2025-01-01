@@ -1,0 +1,6 @@
+GCA_000003925.1	526997	Bacteria;Bacillota;Bacilli;Bacillales;Bacillaceae;Bacillus;Bacillus mycoides;Bacillus mycoides DSM 2048
+GCA_000006685.1	243161	Bacteria;Chlamydiota;Chlamydiia;Chlamydiales;Chlamydiaceae;Chlamydia;Chlamydia muridarum;Chlamydia muridarum str. Nigg
+GCA_000006945.2	99287	Bacteria;Pseudomonadota;Gammaproteobacteria;Enterobacterales;Enterobacteriaceae;Salmonella;Salmonella enterica;Salmonella enterica subsp. enterica serovar Typhimurium str. LT2
+GCA_000006985.1	194439	Bacteria;Chlorobiota;Chlorobiia;Chlorobiales;Chlorobiaceae;Chlorobaculum;Chlorobaculum tepidum;Chlorobaculum tepidum TLS
+GCA_000007025.1	272944	Bacteria;Pseudomonadota;Alphaproteobacteria;Rickettsiales;Rickettsiaceae;Rickettsia;Rickettsia conorii;Rickettsia conorii str. Malish 7
+GCA_000007185.1	190192	Archaea;Methanobacteriota;Methanopyri;Methanopyrales;Methanopyraceae;Methanopyrus;Methanopyrus kandleri;Methanopyrus kandleri AV19
