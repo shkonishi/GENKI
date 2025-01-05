@@ -64,14 +64,14 @@ if (is.na(argv[2])) {
   msg <- paste("[ERROR]", argv[2], "must be user-name for BacDive-API.")
   message(msg1) ; q()
 } else {
-  UNAME <- argv[2]
+  uname <- argv[2]
 }
 
 if (is.na(argv[3])) {
   msg1 <- paste("[ERROR]", argv[3], "must be password for BacDive-API.")
   message(msg) ; q()
 } else {
-  PASWD <- argv[3]
+  paswd <- argv[3]
 }
 
 out_f1 <- paste0("bacdive_summary_", Sys.Date(), ".tsv")
@@ -79,7 +79,7 @@ out_f2 <- paste0("bacdive_genbank_", Sys.Date(), ".tsv")
 
 #  1.2. Print arguments
 msg1 <- message(paste("input	[", in_f, "]"))
-msg2 <- message(paste("USER 	[", UNAME, "]"))
+msg2 <- message(paste("USER 	[", uname, "]"))
 msg3 <- message(paste("PASSWORD [", "XXXXX", "]"))
 msg4 <- message(paste("output1  [", out_f1, "]"))
 msg5 <- message(paste("output2  [", out_f2, "]"))
@@ -92,10 +92,9 @@ dsmz_dat <- read.csv(in_f, TRUE, skip = 2)
 chnk <- chunkr(dsmz_dat$ID, n = 100)
 
 # Open BacDive
-bacdive <- BacDive::open_bacdive(username = UNAME, password = PASWD)
+bacdive <- BacDive::open_bacdive(username = uname, password = paswd)
 exists_obj("bacdive")
 ## 指定idのデータをfetch & データフレームに変換(idの並びは崩れる)
-## 時間がかかる、また途中で失敗する場合がある(curlのエラー)
 bd_dats <- lapply(seq_along(chnk), function(i){
   bd <- BacDive::fetch(bacdive, chnk[[i]])
   as.data.frame(bd)
@@ -128,18 +127,18 @@ desc_gen <- sapply(dat_gen, function(x)x$description) ## Description
 ########################
 ## LPSN lineage
 lineage <- as.data.frame(Reduce(rbind, lapply(dat_tax, function(x){
-    lpsn <- x$LPSN
-    domain <- ifelse(is.null(lpsn$domain), NA, lpsn$domain)
-    phylum <- ifelse(is.null(lpsn$phylum), NA, lpsn$phylum)
-    class <- ifelse(is.null(lpsn$class), NA, lpsn$class)
-    order <- ifelse(is.null(lpsn$order), NA, lpsn$order)
-    family <- ifelse(is.null(lpsn$family), NA, lpsn$family)
-    genus <- ifelse(is.null(lpsn$genus), NA, lpsn$genus)
-    species <- ifelse(is.null(lpsn$species), NA, lpsn$species)
-    full_sfn <- ifelse(is.null(lpsn$`full scientific name`), NA, lpsn$`full scientific name`)
+  lpsn <- x$LPSN
+  domain <- ifelse(is.null(lpsn$domain), NA, lpsn$domain)
+  phylum <- ifelse(is.null(lpsn$phylum), NA, lpsn$phylum)
+  class <- ifelse(is.null(lpsn$class), NA, lpsn$class)
+  order <- ifelse(is.null(lpsn$order), NA, lpsn$order)
+  family <- ifelse(is.null(lpsn$family), NA, lpsn$family)
+  genus <- ifelse(is.null(lpsn$genus), NA, lpsn$genus)
+  species <- ifelse(is.null(lpsn$species), NA, lpsn$species)
+  full_sfn <- ifelse(is.null(lpsn$`full scientific name`), NA, lpsn$`full scientific name`)
 
-    setNames(c(domain, phylum, class, order, family, genus, species, full_sfn), 
-        c("domain","phylum","class","order","family","genus","species","full_scientific_name"))
+  setNames(c(domain, phylum, class, order, family, genus, species, full_sfn), 
+      c("domain","phylum","class","order","family","genus","species","full_scientific_name"))
 })))
 ## synonym
 synonym <- sapply(dat_tax, function(x) {
@@ -153,10 +152,11 @@ synonym <- sapply(dat_tax, function(x) {
 })
 
 ## strain
-strain <- sapply(dat_tax, function(x){ 
-    v <- x$`strain designation`
-    ifelse(is.null(v),NA,v)
+strain <- sapply(dat_tax, function(x) {
+  v <- x$`strain designation`
+  ifelse(is.null(v),NA,v)
 })
+
 ########################
 # Genome 
 # データ構造確認 sapply(dat_gseq, mode) %>% table() # logical かリスト
@@ -178,32 +178,32 @@ dat_gseq <- lapply(dat_seq, function(x){
   }
 })
 gdat <- as.data.frame(Reduce(rbind, lapply(seq_along(dat_gseq), function(i){
-    x<- dat_gseq[[i]] ; # print(i)
-    if(all(is.na(x)) || is.null(x)){
-        accs_gs <- NA ; desc_gs <- NA ; lev_gs <- NA ; db_gs <- NA
-    } else if(!is.null(x) && !is.null(x$accession)){
-      accs_gs <- x$accession
-      desc_gs <- x$description
-      lev_gs  <- ifelse(is.null(x$`assembly level`),NA, x$`assembly level`)
-      db_gs <- x$database
-    } else if(!is.null(x) && is.null(x$accession)){
-      accs_gs <- paste(sapply(x, function(v)v$accession), collapse = ";")
-      desc_gs <- paste(sapply(x, function(v)v$description), collapse = ";")
-      lev_gs <- paste(sapply(x, function(v)v$`assembly level`), collapse = ";")
-      db_gs <- paste(sapply(x, function(v)v$database), collapse = ";")
-    }
-    setNames(c(accs_gs, desc_gs, lev_gs, db_gs),c("accession", "genome_description", "assembly_level", "database" ))
+  x <- dat_gseq[[i]]  # print(i)
+  if (all(is.na(x)) || is.null(x)){
+    accs_gs <- NA ; desc_gs <- NA ; lev_gs <- NA ; db_gs <- NA
+  } else if (!is.null(x) && !is.null(x$accession)) {
+    accs_gs <- x$accession
+    desc_gs <- x$description
+    lev_gs  <- ifelse(is.null(x$`assembly level`),NA, x$`assembly level`)
+    db_gs <- x$database
+  } else if(!is.null(x) && is.null(x$accession)){
+    accs_gs <- paste(sapply(x, function(v) v$accession), collapse = ";")
+    desc_gs <- paste(sapply(x, function(v) v$description), collapse = ";")
+    lev_gs <- paste(sapply(x, function(v) v$`assembly level`), collapse = ";")
+    db_gs <- paste(sapply(x, function(v) v$database), collapse = ";")
+  }
+  setNames(c(accs_gs, desc_gs, lev_gs, db_gs),c("accession", "genome_description", "assembly_level", "database" ))
 })))
 ######################
 # Biosafety level
 ######################
 biosafety_lv <- sapply(seq_along(dat_safe), function(i){
-    x <- dat_safe[[i]]
-    if(all(is.na(x))){
-        NA
-    } else {
-        paste(unlist(x)[names(unlist(x)) %in% "biosafety level"], collapse=";")
-    }
+  x <- dat_safe[[i]]
+  if(all(is.na(x))){
+      NA
+  } else {
+    paste(unlist(x)[names(unlist(x)) %in% "biosafety level"], collapse = ";")
+  }
 })
 
 # 2.5. 要約データを保存しておく
@@ -227,7 +227,7 @@ genome_bacid <- setNames(
     dat$bacdive_id
     )),
   c("gca", "bacdive_id")
-  )
+)
 ## Genbankのgenomeデータが存在する13258種、17284登録 (同種異登録含む)
 bacid_gca <- genome_bacid[!is.na(genome_bacid$gca),]
 

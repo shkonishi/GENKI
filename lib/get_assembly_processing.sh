@@ -116,39 +116,17 @@ function geturl_assembly () {
 # - 登録がsubmitterにより取り消された等の場合でもmd5checksums.txtには記述が存在するため、
 #   md5checksums.txtをダンロードした後にその内容をチェックする
 ###########################################################################################
-
-function get_md5_genomic () {
-    # Usage: get_md5_genomic ./ftp_md5
-    local FTP_MD5=$1
-    local md5_genomes=${2:-'md5_genomes'}
-    local error_md5='error_md5.log'
-
-    # エラーログをクリア
-    > "$error_md5"
-    
-    # MD5リンクの内容を取得し、該当ファイルのみ抽出
-    while IFS= read -r url; do
-    if wget -q -O - "$url" > tmp_md5_output; then
-        if ! grep "_genomic.fna.gz" tmp_md5_output | grep -v -e "_rna_" -e "_cds_" >> "$md5_genomes"; then
-            echo "NO MATCH: $url" >> "$error_md5"
-        fi
-    else
-        echo "FAIL: $url" >> "$error_md5"
-    fi
-        rm tmp_md5_output  # 一時ファイルを削除
-    done < "$FTP_MD5" > "$md5_genomes"    
-}
-
 function get_gca_genomic () {
     # Usage: get_gca_genomic ./ftp_genome ./genomes
     local FTP_GCA=$1
     local OUT_DIR=${2:-'genomes'}
-    local error_gca="error_gca.log"
+
     if [[ ! -f "$FTP_GCA" ]] ; then echo "[ERROR] $FTP_GCA does not exists" ; return 1; fi
     if [[ -d "$OUT_DIR" ]] ; then echo "[ERROR] $OUT_DIR already exists" ; return 1; else mkdir -p "$OUT_DIR" ; fi
-
+    
     # エラーログをクリア
-    > "$error_gca"
+    local error_gca ; error_gca=$(dirname "${OUT_DIR}")/wget_gca.err
+    : > "$error_gca"
 
     # ファイルごとにダウンロードを試行し、エラーを記録
     while IFS= read -r url; do
@@ -159,4 +137,32 @@ function get_gca_genomic () {
         fi
     done < "$FTP_GCA"
 
+}
+
+function get_md5_genomic () {
+    # Usage: get_md5_genomic <ftp_md5_list> <merged_md5>
+    # Error: get_md5_genomic ./ftp_md5 ./genomes/md5_genomes
+    local FTP_MD5=$1
+    local OUT_DIR=${2:-'genomes'}
+
+    # 入出力チェック
+    if [[ ! -f "$FTP_MD5" ]] ; then echo "[ERROR] $FTP_MD5 does not exists" ; return 1; fi
+    if [[ ! -d "$OUT_DIR" ]] ; then mkdir -p "$OUT_DIR" ; fi
+    local out_md5="${OUT_DIR}/md5_genomes"
+    local error_md5 ; error_md5=$(dirname "$OUT_DIR")/wget_md5.err 
+
+    # エラーログをクリア
+    : > "$error_md5"
+    
+    # MD5リンクの内容を取得し、該当ファイルのみ抽出
+    while IFS= read -r url; do
+        if wget -q -O - "$url" > tmp_md5_output; then
+            if ! grep "_genomic.fna.gz" tmp_md5_output | grep -v -e "_rna_" -e "_cds_" >> "$out_md5"; then
+                echo "NO MATCH: $url" >> "$error_md5"
+            fi
+        else
+            echo "FAIL: $url" >> "$error_md5"
+        fi
+        rm tmp_md5_output 
+    done < "$FTP_MD5" > "$out_md5"    
 }

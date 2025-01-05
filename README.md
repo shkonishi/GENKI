@@ -5,16 +5,104 @@
 - **表現型データ**: BacDive
 
 ## **依存**
+- ncbi-genome-download
 - taxonkit
 - BacDive (R-package of API Client)
 
+## **ゲノムデータダウンロード**
+### ncbi-genome-downloadを使う場合
+```bash
+# dry-runを実行してIDを取得しておく
+VER='241229'
+ncbi-genome-download -s genbank -F fasta -M type --dry-run bacteria,archaea > gca_dl_${VER}.txt
+
+# 新規にDLする場合
+ncbi-genome-download -s genbank -F fasta -M type -o "GENVI_${VER}" -m METADATA_TABLE bacteria,archaea > gca_dl_${VER}.txt
+
+# 追加登録されたもののみをDLする場合
+ADD='250105'
+ncbi-genome-download -s genbank -F fasta -M type --dry-run bacteria,archaea > gca_dl_${ADD}.txt
+
+# 除外された登録及び追加された登録を確認
+
+# 追加された登録をDL
+
+```
+
+### genki_download.shを使う場合(現時点では関数を個別に実行する仕様)  
+#### **ダウンロード実行**
+- NCBI FTPサーバーリンクからサマリーデータをダウンロードする
+- アセンブリサマリに記述されている情報について下記リンクのファイルから把握しておく
+    https://ftp.ncbi.nlm.nih.gov/genomes/ASSEMBLY_REPORTS/README_assembly_summary.txt
+- `relation_to_type_material`列にタイプとの関連情報が、`group`列にタクソノミーグループの情報(bacteria, archaea, その他)が記述されている。
+- `assembly from type material`または`assembly from synonym type material`を選択する。ただし、それらの登録の中にはメタゲノム由来も含まれる事に注意。
+
+
+```bash
+# スクリプト仕様(予定)
+# genki_download.sh 
+#-g bacteria,archae \
+#-r type,synonym \
+#-o out_dir "$IN_SUM" \
+
+# genki_download.sh -g bacteria,archae -r type,synonym -o out_dir "$IN_SUM"
+
+# ユーザー定義関数をロード
+source ../lib/get_assembly_processing.sh
+# アセンブリサマリのダウンロード
+VER='241229'
+## GenBank
+wget -c -O "assembly_summary_genbank_${VER}.txt" https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt
+## RefSeq
+wget -c -O "assembly_summary_refseq_${VER}.txt" https://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt
+
+# 指定条件のゲノムデータをダウンロードする
+IN_SUM="assembly_summary_genbank_${VER}.txt"
+OUT_DIR="out_genki_${VER}"
+OUT_DAT_DIR="${OUT_DIR}/dat"
+OUT_LOG_DIR="${OUT_DIR}/log"
+OUT_ASMB_DIR="${OUT_DIR}/genomes"
+out_md5="${OUT_ASMB_DIR}/md5_genomes"
+out_md5chk="${OUT_DIR}/res_md5sum.txt"
+out_md5fail="${OUT_DIR}/res_md5sum_err"
+
+# サマリデータフィルタリング
+mkdir -p "${OUT_DAT_DIR}"
+OUT_SUM="${OUT_DAT_DIR}/assembly_summary_genbank_type_prok_${VER}.txt"
+filter_summary "$IN_SUM" "$OUT_SUM"
+
+# URLファイル作成
+geturl_assembly "$OUT_SUM" "$OUT_LOG_DIR"
+
+# データダウンロード
+get_gca_genomic "${OUT_LOG_DIR}/ftp_genome" "$OUT_ASMB_DIR" &
+wait
+get_md5_genomic "${OUT_LOG_DIR}/ftp_md5" "$OUT_ASMB_DIR" &
+wait
+# md5sumを実行
+(cd "$OUT_ASMB_DIR" && md5sum -c ./md5_genomes) > "$out_md5chk" 2> "$out_md5fail"
+
+# DL失敗したものを確認
+
+```
+
+- 追加登録のみをダウンロードする場合
+- 追加登録の情報情報を抽出したassembly_addition.txtが作成される。 
+
+```bash
+IN_SUM_OLD="./assembly_summary_genbank_241229.txt"
+IN_SUM_NEW="./assembly_summary_genbank_250104.txt"
+
+# genki_update.sh "$IN_SUM_OLD" "$IN_SUM_NEW"
+
+```
+
+
 ## **データ構造**
 ```sh
-.
+out_genki_241229/
 ├── dat
-│   ├── assembly_summary_genbank_type_prok_241229.txt # 指定条件(原核生物のみ、type material)でフィルタしたアセンブリサマリ
-│   ├── assembly_summary_genbank_type_prok_lineage_241229.txt # 系統情報
-│   └── id_lookup.tsv # IDと種名の対応表
+│   └── assembly_summary_genbank_type_prok_241229.txt # フィルタしたアセンブリサマリ
 ├── genomes
 │   ├── GCA_000003925.1_ASM392v1_genomic.fna.gz
 │   ├── GCA_000006685.1_ASM668v1_genomic.fna.gz
@@ -23,72 +111,15 @@
 │   ├── GCA_000007025.1_ASM702v1_genomic.fna.gz
 │   ├── GCA_000007185.1_ASM718v1_genomic.fna.gz
 │   └── md5_genomes
-└── log
-    ├── error_gca.log  # wgetのエラーログ
-    ├── error_md5.log  # wgetのエラーログ
-    ├── ftp_genome     # ゲノムデータURLリスト
-    ├── ftp_md5        # md5ファイルURLリスト
-    ├── res_md5sum.txt # md5sumの結果 
-    ├── res_md5sum_err.txt  # md5sumのエラー
-    └── res_md5sum_fail.txt # ハッシュ値が不一致のファイル名
+├── log
+│   ├── ftp_genome # ゲノムデータURLリスト
+│   └── ftp_md5    # md5ファイルURLリスト
+├── res_md5sum.txt  # md5sumの結果
+├── res_md5sum_err  # md5sumを失敗したファイルリスト
+├── wget_gca.err    # wgetのエラーログ
+└── wget_md5.err    # wgetのエラーログ
 
-```
 
-## **データダウンロード**
-### **ユーザー定義関数をロード**
-- 以下の一連の工程は、スクリプトにする予定だが、現時点では関数を個別に実行する仕様
-```bash
-source ../lib/get_assembly_processing.sh
-```
-
-### **アセンブリサマリのダウンロード**
-- アセンブリサマリに記述されている情報について下記リンクのファイルから把握しておく
-    https://ftp.ncbi.nlm.nih.gov/genomes/ASSEMBLY_REPORTS/README_assembly_summary.txt
-
-```bash
-wget -c https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt
-```
-
-### **細菌・古細菌のみ、かつタイプのみの情報を抽出**
-- `relation_to_type_material`列にタイプとの関連情報が、`group`列にタクソノミーグループの情報(bacteria, archaea, その他)が記述されている。
-- `assembly from type material`または`assembly from synonym type material`を選択する。ただし、それらの登録の中にはメタゲノム由来も含まれる事に注意。
-```bash
-VER='241229'
-IN_SUM="assembly_summary_genbank.txt"
-OUT_SUM="./dat/assembly_summary_genbank_type_prok_${VER}.txt"
-
-mkdir -p ./dat
-filter_summary "$IN_SUM" "$OUT_SUM"
-```
-- 追加登録のみをダウンロードする場合
-- 追加登録の情報情報を抽出したassembly_addition.txtが作成される。 
-
-```bash
-IN_SUM_OLD="./dat/assembly_summary_genbank_type_prok_XXYYZZ.txt"
-IN_SUM_NEW="./dat/assembly_summary_genbank_type_prok_${VER}.txt"
-compare_assembly "$SUM_TYPE_OLD" "$SUM_TYPE_NEW"
-```
-### **URLリンクを作成**
-```bash
-# 目的のデータURLファイル作成
-geturl_assembly "$OUT_SUM"
-# 追加登録のみのURLファイル作成
-geturl_assembly assembly_addition.txt
-```
-### **データダウンロード**
-- 3.で作成されたURLリストファイルを用いてデータをダウンロードする。
-- error_gca.log内にダウンロードを失敗した登録が記録されるので、再ダウンロード
-
-```bash
-get_gca_genomic ./log/ftp_gca ./genomes &
-get_md5_genomic ./log/ftp_md5 ./genomes/md5_genomes &
-
-# md5sumを実行
-cd ./genomes
-md5sum -c md5_genomes > ../res_md5sum.txt 2> ../res_md5sum_err.txt
-# DL失敗したものを確認
-cd ../
-grep -v 'OK' ./res_md5sum.txt > ./res_md5sum_fail.txt
 ```
 
 
