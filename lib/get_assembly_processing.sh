@@ -3,23 +3,107 @@
 ###########################################################################################
 # filter_summary : assembly summaryデータを指定条件でフィルタリングする
 # - ここでは細菌・古細菌のタイプマテリアル由来のデータを抽出する条件を指定している
-# - filter_summary <input.txt> [<output.txt>] 
+# - filter_summary <input.txt> > filterd.txt 2> log
+# - 条件を引数として与えるように変更予定
+# - -g|--group  -y|--type 
+  # [type|synonym|pathotype|neotype|reftype|ICTV|ICTVadd]  
+  # [bacteria|viral|archaea|fungi|metagenomes|invertebrate|other|plant|vertebrate_other|vertebrate_mammalian|protozoa]
 ###########################################################################################
 function filter_summary () {
-    if [ $# -eq 0 ]; then echo "Usage: filter_assembly <input> [<output>]" >&2 ; return 1 ; fi
-    local sum_gca=$1 
-    local sum_gca_type=${2:-"assembly_summary_genbank_type_prok.txt"} 
+    if [ $# -eq 0 ]; then echo "Usage: filter_assembly <input>" >&2 ; return 1 ; fi
+    local in_sum=$1 
     # カラム指定
-    group_col=25 ; type_col=22
-    # アセンブリサマリーの処理
-    awk -F'\t' -v gc=$group_col -v rc=$type_col '$gc ~ /^(bacteria|archaea)$/ && $rc ~ /^assembly from (synonym )?type material$/ ' "$sum_gca" > "$sum_gca_type"
+    local group_col=25 ; local type_col=22
 
+    # アセンブリサマリーの処理
+    echo "[INFO] Filtering assembly summary from $in_sum " >&2
+    awk -F'\t' -v gc=$group_col -v rc=$type_col '$gc ~ /^(bacteria|archaea)$/ && $rc ~ /^assembly from (synonym )?type material$/ ' "$in_sum"
+
+}
+function filter_summary2 () {
+  # Help message
+  if [ $# -eq 0 ]; then
+    echo "Usage: filter_summary -i <assembly_summary> -g <group> -y <output_dir>"
+    echo "Example: filter_summary -i assembly_summary.txt -g bacteria,archaea -y type,synonym"
+    return 1
+  fi
+
+  # Default values
+  local input=""
+  local groups="bacteria,archaea"
+  local types="type,synonym"
+  local type_col=22 ; local group_col=25 ; 
+
+  # Conversion map
+    declare -A type_map=(
+        [type]="assembly from type material"
+        [synonym]="assembly from synonym type material"
+        [pathotype]="assembly from pathotype material"
+        [neotype]="assembly designated as neotype"
+        [reftype]="assembly designated as reftype"
+
+    )
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -i|--input) input="$2"; shift 2 ;;
+            -g|--group) groups="$2"; shift 2 ;;
+            -y|--type) types="$2"; shift 2 ;;
+            *) echo "[ERROR] Unknown option: $1" >&2; return 1 ;;
+        esac
+    done
+
+    # Varidation input
+    [[ ! -f "$input" ]] && { echo "[ERROR] Input file not found: $input" >&2 ; return 1 ; }
+
+    # Column 'group' filtering conditions covert to regexp.
+    local group_re=""
+    if [[ -n "$groups" ]]; then
+        IFS=',' read -ra garr <<< "$groups"
+        group_re=$(printf "|%s" "${garr[@]}")
+        group_re="${group_re:1}"  # 先頭の | を削除
+    fi
+
+    # Column 'type'  filtering conditions covert to regexp.
+    local type_re=""
+    if [[ -n "$types" ]]; then
+        IFS=',' read -ra tarr <<< "$types"
+        for t in "${tarr[@]}"; do
+            [[ -n "${type_map[$t]}" ]] && type_re+="${type_map[$t]}|"
+        done
+        type_re="${type_re%|}"  # 最後の | を削除
+    fi
+    echo "$group_re" ; echo "$type_re"
+
+
+
+}
+###########################################################################################
+# geturl_assembly : アセンブリサマリからアセンブリ及びmd5のurlリンクを取得する
+###########################################################################################
+function geturl_assembly () {
+    if [ $# -eq 0 ]; then echo "Usage: geturl_assembly <input> [<output>]" >&2 ; return 1 ; fi
+    local sum_gca=$1
+    local out_dir=${2:-'log'}
+    local ftp_genome="${out_dir}/ftp_genome"    # ダウンロード用のゲノムファイルリンク
+    local ftp_md5="${out_dir}/ftp_md5"          # MD5チェックサムリンク
+
+    if [[ -d "$out_dir" ]] ; then echo "[ERROR] $out_dir already exists" ; return 1; else mkdir -p "$out_dir" ; fi
+    
+    # カラム指定
+    group_col=25 ; type_col=22 ; ftp_col=20
+
+    # アセンブリサマリーの処理
+    awk -F'\t' -v gc=$group_col -v rc=$type_col -v ftp=$ftp_col '$gc ~ /^(bacteria|archaea)$/ && $rc ~ /^assembly from (synonym )?type material$/ \
+    { split($ftp, arr, "/"); asm_name=arr[length(arr)]; glnk=$ftp "/" asm_name "_genomic.fna.gz"; md5lnk=$ftp "/md5checksums.txt"; print glnk > "'$ftp_genome'"; print md5lnk > "'$ftp_md5'"; }' "$sum_gca"
+    return 0
 }
 
 ###########################################################################################
 # compare_assembly : 過去データと追加データの比較
 # - ここでは細菌・古細菌のタイプマテリアル由来のデータを抽出する条件を指定している
-# - filter_summary <input.txt> [<output.txt>] 
+# - filter_summary <assembly_summary_old> <assembly_summary_new> 
 ###########################################################################################
 function compare_assembly () {
     local asm_old=$1
@@ -87,31 +171,14 @@ function compare_assembly () {
 }
 
 ###########################################################################################
-# geturl_assembly : アセンブリサマリからアセンブリ及びmd5のurlリンクを取得する
-###########################################################################################
-function geturl_assembly () {
-    if [ $# -eq 0 ]; then echo "Usage: geturl_assembly <input> [<output>]" >&2 ; return 1 ; fi
-    local sum_gca=$1
-    local out_dir=${2:-'log'}
-    local ftp_genome="${out_dir}/ftp_genome"    # ダウンロード用のゲノムファイルリンク
-    local ftp_md5="${out_dir}/ftp_md5"          # MD5チェックサムリンク
-
-    if [[ -d "$out_dir" ]] ; then echo "[ERROR] $out_dir already exists" ; return 1; else mkdir -p "$out_dir" ; fi
-    
-    # カラム指定
-    group_col=25 ; type_col=22 ; ftp_col=20
-
-    # アセンブリサマリーの処理
-    awk -F'\t' -v gc=$group_col -v rc=$type_col -v ftp=$ftp_col '$gc ~ /^(bacteria|archaea)$/ && $rc ~ /^assembly from (synonym )?type material$/ \
-    { split($ftp, arr, "/"); asm_name=arr[length(arr)]; glnk=$ftp "/" asm_name "_genomic.fna.gz"; md5lnk=$ftp "/md5checksums.txt"; print glnk > "'$ftp_genome'"; print md5lnk > "'$ftp_md5'"; }' "$sum_gca"
-    return 0
-}
-
-###########################################################################################
+# get_assembly_summary
+# - assembly_summaryをDLする(genbankまたはrefseqを選択)
 # get_gca_genomic: 
+# - Usage: get_gca_genomic ./ftp_genome ./genomes
 # - urlリンクファイルをもとにしてゲノムデータをダウンロードする
 # - ゲノムデータがリポジトリに存在しない場合、wgetでエラーを拾う
 # get_md5_genomic
+# - Usage: get_md5_genomic ./ftp_md5 ./genomes/md5_genomes
 # - urlリンクファイルをもとにmd5データをダウンロードした後、ゲノムデータのみ抽出
 # - 登録がsubmitterにより取り消された等の場合でもmd5checksums.txtには記述が存在するため、
 #   md5checksums.txtをダンロードした後にその内容をチェックする
@@ -141,7 +208,7 @@ function get_gca_genomic () {
 
 function get_md5_genomic () {
     # Usage: get_md5_genomic <ftp_md5_list> <merged_md5>
-    # Error: get_md5_genomic ./ftp_md5 ./genomes/md5_genomes
+    # Example: get_md5_genomic ./ftp_md5 ./genomes/md5_genomes
     local FTP_MD5=$1
     local OUT_DIR=${2:-'genomes'}
 
@@ -165,4 +232,26 @@ function get_md5_genomic () {
         fi
         rm tmp_md5_output 
     done < "$FTP_MD5" > "$out_md5"    
+}
+
+function get_assembly_summary () {
+    if [ $# -eq 0 ]; then echo "Usage: get_assembly_summary <gbk|ref> " >&2 ; return 1 ; fi
+    local TYPE=$1
+    local VER ; VER=$(date +"%Y%m%dT%H%M") 
+    local output="assembly_summary_genbank_${VER}.txt"
+    local err_wget="wget_err"
+    : > "$err_wget"
+
+    if [[ "$TYPE" == 'gbk' ]]; then
+        url="https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
+    elif [[ "$TYPE" == 'ref' ]]; then
+        url="https://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt"
+    else 
+        echo "[INFO] Select 'gbk' or 'ref' . "
+        return 1
+    fi
+    cmd="wget -c -O $output $url"
+    echo "[CMD] $cmd" >&2
+    #eval "$cmd" 2>$err_wget || { echo "FAIL: " >$err_wget ; return 1 ; }
+
 }

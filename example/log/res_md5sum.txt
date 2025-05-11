@@ -1,6 +1,0 @@
-./GCA_000003925.1_ASM392v1_genomic.fna.gz: OK
-./GCA_000006685.1_ASM668v1_genomic.fna.gz: OK
-./GCA_000006945.2_ASM694v2_genomic.fna.gz: OK
-./GCA_000006985.1_ASM698v1_genomic.fna.gz: OK
-./GCA_000007025.1_ASM702v1_genomic.fna.gz: OK
-./GCA_000007185.1_ASM718v1_genomic.fna.gz: OK
