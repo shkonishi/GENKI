@@ -49,7 +49,7 @@ cut -f22 assembly_summary_genbank_20250508T2015.txt | sort | uniq -c | sort -nr 
 
 - `Column 5: refseq_category` RefSeqプロジェクトの分類において、アセンブリが参照ゲノムであるかどうか
 - `Column 12: assembly_level` Complete genome|Chromosome|Scaffold|Contig
-- ``
+
 
       
 
@@ -69,44 +69,52 @@ cut -f22 assembly_summary_genbank_20250508T2015.txt | sort | uniq -c | sort -nr 
 ## get_assembly_summary 'gbk'
 ## 2. assembly_summaryを指定条件でフィルタリング
 ## filter_summary assembly_summary > filtered_assembly_summary
-## geturl_assembly filtered_assembly_summary ./out_dir
+## geturl_assembly assembly_summary_genbank_20250511T1744.txt ./out_dir
 
 ```
 
 ```bash
 # ユーザー定義関数をロード
 source ../lib/get_assembly_processing.sh
-# アセンブリサマリのダウンロード
+
+# 作業ディレクトリ構築 & Logファイル定義
 VER=$(date +"%Y%m%dT%H%M")
+OUT_DIR="GENKI_${VER}"
+[[ ! -d "$OUT_DIR" ]] && mkdir -p "${OUT_DIR}"
+LOG=${VER}_genki.log
 
-## GenBank
-wget -c -O "assembly_summary_genbank_${VER}.txt" https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt
+# assembly summaryのダウンロード
+OUTSUMDIR="${OUT_DIR}"/.genki
+[[ ! -d "$OUTSUMDIR" ]] && mkdir -p "${OUTSUMDIR}"
+out_sum="${OUTSUMDIR}"/assembly_summary_${VER}.txt
 
-# 指定条件のゲノムデータをダウンロードする
-IN_SUM="assembly_summary_genbank_${VER}.txt"
-OUT_DIR="out_genki_${VER}"
+get_assembly_summary gbk "$out_sum"
+
+# assembly summaryのフィルタリング
+OUT_DAT_DIR="${OUT_DIR}/dat"
+[[ ! -d "$OUT_DAT_DIR" ]] && mkdir -p "${OUT_DAT_DIR}"
+out_filtered_sum="${OUT_DAT_DIR}/assembly_summary_filtered_${VER}.txt"
+
+filter_gbsummary -i "$out_sum" > "$out_filtered_sum"
+
+# assembly データのダウンロード
 OUT_DAT_DIR="${OUT_DIR}/dat"
 OUT_LOG_DIR="${OUT_DIR}/log"
 OUT_ASMB_DIR="${OUT_DIR}/genomes"
 
-out_sum="${OUT_DAT_DIR}/assembly_summary_genbank_type_prok_${VER}.txt"
 out_md5="${OUT_ASMB_DIR}/md5_genomes"
-out_md5chk="${OUT_DIR}/res_md5sum.txt"
-out_md5fail="${OUT_DIR}/res_md5sum_err"
+out_md5chk="${OUT_LOG_DIR}/res_md5sum.txt"
+out_md5fail="${OUT_LOG_DIR}/res_md5sum_err"
 
-# サマリデータフィルタリング
-mkdir -p "${OUT_DAT_DIR}"
-filter_summary "$IN_SUM" "$out_sum"
+## URLファイル作成
+geturl_assembly "$out_filtered_sum" "$OUT_LOG_DIR"
 
-# URLファイル作成
-geturl_assembly "$out_sum" "$OUT_LOG_DIR"
-
-# データダウンロード
+## データダウンロード
 get_gca_genomic "${OUT_LOG_DIR}/ftp_genome" "$OUT_ASMB_DIR" &
 wait
 get_md5_genomic "${OUT_LOG_DIR}/ftp_md5" "$OUT_ASMB_DIR" &
 wait
-# md5sumを実行
+## md5sumを実行
 (cd "$OUT_ASMB_DIR" && md5sum -c ./md5_genomes) > "$out_md5chk" 2> "$out_md5fail"
 
 # Log集計
@@ -117,44 +125,84 @@ cat out_genki_20250508T2015/wget_gca.err
 # MD5失敗したものを確認
 awk -F":" 'BEGIN{ok=0; fail=0; }$2~/OK/{ok++;}$2!~/OK/{fail++;}END{print "OK:" ok "\t" "FAIL:" fail}' < "out_genki_20250508T2015/res_md5sum.txt"
 
-
 ```
 
 - 追加登録のみをダウンロードする場合
-- 追加登録の情報情報を抽出したassembly_addition.txtが作成される。 
 
 ```bash
+# 作業ディレクトリ構築 & Logファイル定義
 VER=$(date +"%Y%m%dT%H%M")
-IN_SUM="assembly_summary_genbank_${VER}.txt"
-OUT_SUM="assembly_summary_genbank_type_prok_${VER}.txt"
-filter_summary "$IN_SUM" "$OUT_SUM"
+OUT_DIR=~/db/GENKI_250506 # 既に作成済みのディレクトリ
+OUT_UPDIR="${OUT_DIR}/update_${VER}"
+[[ ! -d "$OUT_UPDIR" ]] && mkdir -p "${OUT_UPDIR}"
+LOG=${OUT_UPDIR}/${VER}_genki.log
 
-IN_SUM_OLD="out_genki_20250508T2015/dat/assembly_summary_genbank_type_prok_20250508T2015.txt"
-IN_SUM_NEW="./assembly_summary_genbank_type_prok_20250511T1407.txt"
-# genki_update.sh "$IN_SUM_OLD" "$IN_SUM_NEW"
+# assembly summaryのダウンロード
+OUTSUMDIR="${OUT_DIR}"/.genki
+[[ ! -d "$OUTSUMDIR" ]] && mkdir -p "${OUTSUMDIR}"
+out_sum="${OUTSUMDIR}"/assembly_summary_${VER}.txt
+#out_sum=${OUTSUMDIR}/assembly_summary_genbank_20250518T0224.txt
+get_assembly_summary gbk "$out_sum"
+
+# assembly summaryのフィルタリング
+NEW_SUM="${OUT_DIR}/dat/assembly_summary_filtered_${VER}.txt"
+filter_gbsummary -i "$out_sum" -g bacteria,archaea -y type,synonym > "$NEW_SUM" 2>> "$LOG"
+
+# update_idを取得
+OLD_SUM="${OUT_DIR}/dat/assembly_summary_filtered_20250508T2015.txt" # 前回作成したフィルタ済みassembly_summary
+update_summary -o $OLD_SUM -n $NEW_SUM -r "${OUT_UPDIR}"/assembly_removed.tsv -a "${OUT_UPDIR}"/assembly_addition.tsv 2>> "$LOG"
+
+# update urlを取得
+geturl_assembly -i "${OUT_UPDIR}"/assembly_addition.tsv -g "${OUT_UPDIR}/ftp_genomes.url" -r "${OUT_UPDIR}/ftp_md5.url" 2>> "$LOG"
+
+
+# ダウンロード
+OUT_ASMB_DIR="${OUT_UPDIR}/genomes"
+get_gca_genomic "${OUT_UPDIR}/ftp_genomes.url" "$OUT_ASMB_DIR" &
+wait
+get_md5_genomic "${OUT_UPDIR}/ftp_md5.url" "$OUT_ASMB_DIR" &
+wait
+
+## md5sumを実行
+out_md5chk="${OUT_UPDIR}/res_md5sum.txt"
+out_md5fail="${OUT_UPDIR}/res_md5sum.err"
+(cd "$OUT_ASMB_DIR" && md5sum -c ./md5_genomes) > "$out_md5chk" 2> "$out_md5fail"
+
+# DL実行した数
+num_dl=$(cat "${OUT_UPDIR}/ftp_genomes.url" | wc -l) 
+# DL失敗したものを確認
+cat "${OUT_UPDIR}/wget_gca.err"
+# MD5失敗したものを確認
+res_md5chk=$(awk -F":" 'BEGIN{ok=0; fail=0; }$2~/OK/{ok++;}$2!~/OK/{fail++;}END{print "OK:" ok "\t" "FAIL:" fail}' < "${OUT_UPDIR}/res_md5sum.txt")
+
+echo "[INFO] Number of downloads executed: $num_dl" >&2
+echo "[INFO] Check for download failures: " >&2 ; cat "${OUT_UPDIR}/wget_gca.err" >&2
+echo "[INFO] Check MD5 checksum value mismatch: ${res_md5chk}" >&2 ; cat "${OUT_UPDIR}/wget_md5.err" >&2
+
+
 
 ```
 
 ## **データ構造**
 ```sh
-out_genki_241229/
-├── dat
-│   └── assembly_summary_genbank_type_prok_241229.txt # フィルタしたアセンブリサマリ
-├── genomes
+~/db/GENKI_250506/
+├── blast_db        # blast データベース
+├── dat             # フィルタ済みアセンブルデータ
+├── genomes         # ゲノムデータ
 │   ├── GCA_000003925.1_ASM392v1_genomic.fna.gz
 │   ├── GCA_000006685.1_ASM668v1_genomic.fna.gz
 │   ├── GCA_000006945.2_ASM694v2_genomic.fna.gz
-│   ├── GCA_000006985.1_ASM698v1_genomic.fna.gz
-│   ├── GCA_000007025.1_ASM702v1_genomic.fna.gz
-│   ├── GCA_000007185.1_ASM718v1_genomic.fna.gz
+│   ├── :
 │   └── md5_genomes
 ├── log
-│   ├── ftp_genome # ゲノムデータURLリスト
-│   └── ftp_md5    # md5ファイルURLリスト
-├── res_md5sum.txt  # md5sumの結果
-├── res_md5sum_err  # md5sumを失敗したファイルリスト
-├── wget_gca.err    # wgetのエラーログ
-└── wget_md5.err    # wgetのエラーログ
+│   ├── ftp_genome         # ゲノムデータURLリスト
+│   ├── ftp_md5            # md5ファイルURLリスト
+│   ├── res_md5sum.txt     # md5sumの結果
+│   └── res_md5sum.err     # md5sumを失敗したファイルリスト
+├── skani_db 
+├── update_20250518T1838    #
+├── wget_gca.err            # wgetのエラーログ
+└── wget_md5.err            # wgetのエラーログ
 
 
 ```
@@ -176,7 +224,7 @@ tar xvf taxdump.tar.gz
 
 ```bash
 IN_TYPE='./dat/assembly_summary_genbank_type_prok.txt'
-OUT_TAX='./dat/assembly_summary_genbank_type_prok_lineage.txt'
+OUT_TAX='./dat/lineage.txt'
 OUT_TAB='./dat/id_lookup.tsv'
 
 # cut -f1,6 $IN_TYPE | taxonkit lineage -i 2 | taxonkit reformat -i 3 -f "{k};{p};{c};{o};{f};{g};{s};{t}" | cut -f1,2,4 > "$OUT_TAX"

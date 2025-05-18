@@ -1,29 +1,59 @@
 #!/bin/bash
 
-###########################################################################################
-# filter_summary : assembly summaryデータを指定条件でフィルタリングする
-# - ここでは細菌・古細菌のタイプマテリアル由来のデータを抽出する条件を指定している
-# - filter_summary <input.txt> > filterd.txt 2> log
-# - 条件を引数として与えるように変更予定
-# - -g|--group  -y|--type 
-  # [type|synonym|pathotype|neotype|reftype|ICTV|ICTVadd]  
-  # [bacteria|viral|archaea|fungi|metagenomes|invertebrate|other|plant|vertebrate_other|vertebrate_mammalian|protozoa]
-###########################################################################################
-function filter_summary () {
-    if [ $# -eq 0 ]; then echo "Usage: filter_assembly <input>" >&2 ; return 1 ; fi
-    local in_sum=$1 
-    # カラム指定
-    local group_col=25 ; local type_col=22
+function get_assembly_summary () {
+    if [ $# -eq 0 ]; then echo "Usage: get_assembly_summary <gbk|ref> <output>" >&2 ; return 1 ; fi
+    local TYPE=$1
+    local output=${2:-"assembly_summary_$(date +"%Y%m%dT%H%M").txt"}
 
-    # アセンブリサマリーの処理
-    echo "[INFO] Filtering assembly summary from $in_sum " >&2
-    awk -F'\t' -v gc=$group_col -v rc=$type_col '$gc ~ /^(bacteria|archaea)$/ && $rc ~ /^assembly from (synonym )?type material$/ ' "$in_sum"
+    if [[ "$TYPE" == 'gbk' ]]; then
+        url="https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
+    elif [[ "$TYPE" == 'ref' ]]; then
+        url="https://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt"
+    else 
+        echo "[INFO] Select 'gbk' or 'ref' . "
+        return 1
+    fi
+    cmd="wget -c -O $output $url"
+    echo "[CMD] $cmd" >&2
+    #eval "$cmd" 2>$err_wget || { echo "FAIL: " >$err_wget ; return 1 ; }
 
 }
-function filter_summary2 () {
+
+###########################################################################################
+# filter_gbsummary : assembly summaryデータを指定条件でフィルタリングする
+# - ここでは細菌・古細菌のタイプマテリアル由来のデータを抽出する条件を指定している
+# - filter_gbsummary <input.txt> > filterd.txt 2> log
+# - 条件を引数として与えるように変更予定 group(25列目)
+# - -g|--group  -y|--type 
+#  [type|synonym|pathotype|neotype|reftype|ICTV|ICTVadd]  
+#  [bacteria|viral|archaea|fungi|metagenomes|invertebrate|other|plant|vertebrate_other|vertebrate_mammalian|protozoa]
+###########################################################################################
+
+# Returns the position of the specified column name in “assembly_summary”.
+function get_column_index() {
+    local file="$1"
+    local colname="$2"
+
+    # Get header line
+    local header
+    header=$(grep '^#' "$file" | tail -n1)
+
+    # Remove `#` and store in tab-delimited array & find column name position (return 1-indexed)
+    IFS=$'\t' read -r -a columns <<< "${header#\#}"
+    for i in "${!columns[@]}"; do
+        if [[ "${columns[$i]}" == "$colname" ]]; then
+            echo $((i + 1))
+            return 0
+        fi
+    done
+    echo "[ERROR] Column '$colname' not found." >&2 ; return 1
+}
+
+# Filtering assembly summary with 'group' and 'relation_to_type_material'
+function filter_gbsummary () {
   # Help message
   if [ $# -eq 0 ]; then
-    echo "Usage: filter_summary -i <assembly_summary> -g <group> -y <output_dir>"
+    echo "Usage: filter_summary -i <assembly_summary> -g <group> -y <relation_to_type>"
     echo "Example: filter_summary -i assembly_summary.txt -g bacteria,archaea -y type,synonym"
     return 1
   fi
@@ -32,9 +62,11 @@ function filter_summary2 () {
   local input=""
   local groups="bacteria,archaea"
   local types="type,synonym"
-  local type_col=22 ; local group_col=25 ; 
+  local type_col="" 
+  local group_col=""
+  local skip=""
 
-  # Conversion map
+  # Conversion map for group column
     declare -A type_map=(
         [type]="assembly from type material"
         [synonym]="assembly from synonym type material"
@@ -56,6 +88,14 @@ function filter_summary2 () {
 
     # Varidation input
     [[ ! -f "$input" ]] && { echo "[ERROR] Input file not found: $input" >&2 ; return 1 ; }
+    group_col=$(get_column_index "$input" "group")
+    [[ "$group_col" == "" ]] && { echo "[ERROR] Column 'relation_to_type_material' not found: $input" >&2 ; return 1 ; }
+    type_col=$(get_column_index "$input" "relation_to_type_material")
+    [[ "$type_col" == "" ]] && { echo "[ERROR] Column 'group' not found: $input" >&2 ; return 1 ; }
+
+    # Skip comment line
+    skip=$(grep -n -m1 '^#assembly_accession' "$input" | cut -f1 -d":")
+    echo "[INFO] Skip comment lines under $skip" >&2
 
     # Column 'group' filtering conditions covert to regexp.
     local group_re=""
@@ -64,6 +104,7 @@ function filter_summary2 () {
         group_re=$(printf "|%s" "${garr[@]}")
         group_re="${group_re:1}"  # 先頭の | を削除
     fi
+    echo "[INFO] Column 'group' filtering conditions '$group_re'" >&2
 
     # Column 'type'  filtering conditions covert to regexp.
     local type_re=""
@@ -74,40 +115,71 @@ function filter_summary2 () {
         done
         type_re="${type_re%|}"  # 最後の | を削除
     fi
-    echo "$group_re" ; echo "$type_re"
+    echo "[INFO] Column 'type'  filtering conditions '$type_re'" >&2
 
-
-
+    # awk filtering (column 'group' and 'relation_to_type_material')
+    awk -v skip="$skip" -v gre="$group_re" -v tre="$type_re" -v gc="$group_col" -v rc="$type_col" '
+        BEGIN { FS = "\t" }
+        (NR > skip) && (gre == "" || $gc ~ gre) && (tre == "" || $rc ~ tre) 
+        ' "$input"
 }
+
 ###########################################################################################
 # geturl_assembly : アセンブリサマリからアセンブリ及びmd5のurlリンクを取得する
+#  geturl_assembly -i <input> [--out_genome_url <outfile>] [--out_md5_url <outfile>]
 ###########################################################################################
 function geturl_assembly () {
-    if [ $# -eq 0 ]; then echo "Usage: geturl_assembly <input> [<output>]" >&2 ; return 1 ; fi
-    local sum_gca=$1
-    local out_dir=${2:-'log'}
-    local ftp_genome="${out_dir}/ftp_genome"    # ダウンロード用のゲノムファイルリンク
-    local ftp_md5="${out_dir}/ftp_md5"          # MD5チェックサムリンク
+    if [ $# -eq 0 ]; then echo "Usage: geturl_assembly -i <input> [--out_genome_url <outfile>] [--out_md5_url <outfile>]" >&2 ; return 1 ; fi
 
-    if [[ -d "$out_dir" ]] ; then echo "[ERROR] $out_dir already exists" ; return 1; else mkdir -p "$out_dir" ; fi
-    
-    # カラム指定
-    group_col=25 ; type_col=22 ; ftp_col=20
+    # Default values
+    local sum_gca
+    local ftp_col=20
+    local ftp_genome="ftp_genome.url"    # Output of assembly URL
+    local ftp_md5="ftp_md5.url"          # Output of md5 URL
 
-    # アセンブリサマリーの処理
-    awk -F'\t' -v gc=$group_col -v rc=$type_col -v ftp=$ftp_col '$gc ~ /^(bacteria|archaea)$/ && $rc ~ /^assembly from (synonym )?type material$/ \
-    { split($ftp, arr, "/"); asm_name=arr[length(arr)]; glnk=$ftp "/" asm_name "_genomic.fna.gz"; md5lnk=$ftp "/md5checksums.txt"; print glnk > "'$ftp_genome'"; print md5lnk > "'$ftp_md5'"; }' "$sum_gca"
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        -i|--input) sum_gca="$2"; shift 2 ;;
+        -g|--out_genome_url) ftp_genome="$2"; shift 2 ;;
+        -m|--out_md5_url) ftp_md5="$2"; shift 2 ;;
+        *) echo "[ERROR] Unexpected argument: $1" >&2; return 1 ;;
+        esac
+    done
+
+    # shellcheck disable=SC2086
+    awk -F'\t' -v ftp=$ftp_col '{ 
+        split($ftp, arr, "/"); asm_name=arr[length(arr)]; glnk=$ftp "/" asm_name "_genomic.fna.gz"; md5lnk=$ftp "/md5checksums.txt"; print glnk > "'$ftp_genome'"; print md5lnk > "'$ftp_md5'"
+        }' "$sum_gca"
     return 0
 }
 
 ###########################################################################################
-# compare_assembly : 過去データと追加データの比較
-# - ここでは細菌・古細菌のタイプマテリアル由来のデータを抽出する条件を指定している
-# - filter_summary <assembly_summary_old> <assembly_summary_new> 
+# update_summary : 過去データと追加データの比較
+# Usage: update_summary -o <assembly_summary_old> -n <assembly_summary_new> [-r <removed_id>] [-a <added_id>]
+# Example: update_summary -o old.txt -n new.txt -r assembly_removed.tsv -a assembly_addition.tsv
 ###########################################################################################
-function compare_assembly () {
-    local asm_old=$1
-    local asm_new=$2
+function update_summary () {
+    if [ $# -eq 0 ]; then 
+        echo "Usage: update_summary -o <assembly_summary_old> -n <assembly_summary_new> [-r <removed_id>] [-a <added_id>]" >&2 
+        return 1
+    fi
+
+    local asm_old
+    local asm_new
+    local out_removed="assembly_removed.tsv"
+    local out_added="assembly_addition.tsv"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        -o|--old_summary) asm_old="$2"; shift 2 ;;
+        -n|--new_summary) asm_new="$2"; shift 2 ;;
+        -r|--removed) out_removed="$2"; shift 2 ;;
+        -a|--added) out_added="$2"; shift 2 ;;
+        *) echo "[ERROR] Unexpected argument: $1" >&2; return 1 ;;
+        esac
+    done
 
     # unique array
     function uqarray () { 
@@ -151,22 +223,26 @@ function compare_assembly () {
 
     # Extract IDs
     # shellcheck disable=SC2034
-    mapfile -t old_id < <(cut -f1 "$asm_old")
+    mapfile -t old_id < <(grep -v '^#' "$asm_old" | cut -f1)
     # shellcheck disable=SC2034
-    mapfile -t new_id < <(cut -f1 "$asm_new")
+    mapfile -t new_id < <(grep -v '^#' "$asm_new" | cut -f1)
 
     # Temporary files for IDs
-    tmp_old_ids=$(mktemp)
-    tmp_new_ids=$(mktemp)
+    tmp_old_ids=$(mktemp --suffix=.ids)
+    tmp_new_ids=$(mktemp --suffix=.ids)
 
     # Get removed and added assemblies
     uqarray old_id new_id 1 > "$tmp_old_ids"
     uqarray old_id new_id 2 > "$tmp_new_ids"
 
-    get_id_stream "$tmp_old_ids" "$asm_old" > assembly_removed.tsv
-    get_id_stream "$tmp_new_ids" "$asm_new" > assembly_addition.tsv
+    get_id_stream "$tmp_old_ids" "$asm_old" > "$out_removed"
+    get_id_stream "$tmp_new_ids" "$asm_new" > "$out_added"
+
+    echo "[INFO] Removed entries: $(wc -l < "$out_removed")"  >&2
+    echo "[INFO] Added entries: $(wc -l < "$out_added")"  >&2
 
     # Clean up temporary files
+    echo "[INFO] Cleaning up temporaly files ..." >&2
     rm -f "$tmp_old_ids" "$tmp_new_ids"
 }
 
@@ -179,12 +255,14 @@ function compare_assembly () {
 # - ゲノムデータがリポジトリに存在しない場合、wgetでエラーを拾う
 # get_md5_genomic
 # - Usage: get_md5_genomic ./ftp_md5 ./genomes/md5_genomes
-# - urlリンクファイルをもとにmd5データをダウンロードした後、ゲノムデータのみ抽出
+# - urlリンクファイルをもとにmd5データをダウンロードした後、ゲノムデータのmd5値のみ抽出
 # - 登録がsubmitterにより取り消された等の場合でもmd5checksums.txtには記述が存在するため、
 #   md5checksums.txtをダンロードした後にその内容をチェックする
 ###########################################################################################
 function get_gca_genomic () {
     # Usage: get_gca_genomic ./ftp_genome ./genomes
+    if [ $# -eq 0 ]; then echo "Usage: get_gca_genomic <genomes_ftp_list> [<output_dir>] " >&2  ; return 1 ; fi
+
     local FTP_GCA=$1
     local OUT_DIR=${2:-'genomes'}
 
@@ -207,8 +285,13 @@ function get_gca_genomic () {
 }
 
 function get_md5_genomic () {
-    # Usage: get_md5_genomic <ftp_md5_list> <merged_md5>
-    # Example: get_md5_genomic ./ftp_md5 ./genomes/md5_genomes
+    # Usage: get_gca_genomic ./ftp_genome ./genomes
+    if [ $# -eq 0 ]; then 
+        echo "Usage: get_md5_genomic <genomes_ftp_list> [<output_dir>]" >&2
+        echo "Example: get_md5_genomic ./ftp_md5 ./genomes/md5_genomes" >&2
+        return 1
+    fi
+
     local FTP_MD5=$1
     local OUT_DIR=${2:-'genomes'}
 
@@ -234,24 +317,3 @@ function get_md5_genomic () {
     done < "$FTP_MD5" > "$out_md5"    
 }
 
-function get_assembly_summary () {
-    if [ $# -eq 0 ]; then echo "Usage: get_assembly_summary <gbk|ref> " >&2 ; return 1 ; fi
-    local TYPE=$1
-    local VER ; VER=$(date +"%Y%m%dT%H%M") 
-    local output="assembly_summary_genbank_${VER}.txt"
-    local err_wget="wget_err"
-    : > "$err_wget"
-
-    if [[ "$TYPE" == 'gbk' ]]; then
-        url="https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
-    elif [[ "$TYPE" == 'ref' ]]; then
-        url="https://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt"
-    else 
-        echo "[INFO] Select 'gbk' or 'ref' . "
-        return 1
-    fi
-    cmd="wget -c -O $output $url"
-    echo "[CMD] $cmd" >&2
-    #eval "$cmd" 2>$err_wget || { echo "FAIL: " >$err_wget ; return 1 ; }
-
-}
