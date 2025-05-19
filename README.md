@@ -66,10 +66,16 @@ cut -f22 assembly_summary_genbank_20250508T2015.txt | sort | uniq -c | sort -nr 
 
 # ユーザー定義関数
 ## 1. assembly_summaryをDL(genbankまたはrefseqを選択)
-## get_assembly_summary 'gbk'
-## 2. assembly_summaryを指定条件でフィルタリング
-## filter_summary assembly_summary > filtered_assembly_summary
-## geturl_assembly assembly_summary_genbank_20250511T1744.txt ./out_dir
+## get_assembly_summary <gbk|ref> <output>
+## 2.1. assembly_summaryを指定条件でフィルタリング
+## filter_summary -i <assembly_summary> -g <group> -y <relation_to_type> > assembly_summary_filtered.tsv
+## 2.2. update されたassembly_summaryを取得(削除された)
+#  update_summary -o <assembly_summary_old> -n <assembly_summary_new> [-r <removed_id>] [-a <added_id>]
+## 3. genomeおよびmd5のftp-urlを取得
+## geturl_assembly -i <input> [--out_genome_url <outfile>] [--out_md5_url <outfile>]
+## 4. genomeおよびmd5のダウンロード
+## get_gca_genomic <genomes_ftp_list> [<output_dir>] 
+## get_md5_genomic <md5_ftp_list> [<output_dir>]
 
 ```
 
@@ -137,22 +143,17 @@ OUT_UPDIR="${OUT_DIR}/update_${VER}"
 [[ ! -d "$OUT_UPDIR" ]] && mkdir -p "${OUT_UPDIR}"
 LOG=${OUT_UPDIR}/${VER}_genki.log
 
-# assembly summaryのダウンロード
+# assembly summaryのダウンロード => フィルタリング
 OUTSUMDIR="${OUT_DIR}"/.genki
 [[ ! -d "$OUTSUMDIR" ]] && mkdir -p "${OUTSUMDIR}"
 out_sum="${OUTSUMDIR}"/assembly_summary_${VER}.txt
-#out_sum=${OUTSUMDIR}/assembly_summary_genbank_20250518T0224.txt
 get_assembly_summary gbk "$out_sum"
-
-# assembly summaryのフィルタリング
 NEW_SUM="${OUT_DIR}/dat/assembly_summary_filtered_${VER}.txt"
 filter_gbsummary -i "$out_sum" -g bacteria,archaea -y type,synonym > "$NEW_SUM" 2>> "$LOG"
 
-# update_idを取得
+# update_idを取得 =>  update urlを取得
 OLD_SUM="${OUT_DIR}/dat/assembly_summary_filtered_20250508T2015.txt" # 前回作成したフィルタ済みassembly_summary
 update_summary -o $OLD_SUM -n $NEW_SUM -r "${OUT_UPDIR}"/assembly_removed.tsv -a "${OUT_UPDIR}"/assembly_addition.tsv 2>> "$LOG"
-
-# update urlを取得
 geturl_assembly -i "${OUT_UPDIR}"/assembly_addition.tsv -g "${OUT_UPDIR}/ftp_genomes.url" -r "${OUT_UPDIR}/ftp_md5.url" 2>> "$LOG"
 
 
@@ -168,6 +169,7 @@ out_md5chk="${OUT_UPDIR}/res_md5sum.txt"
 out_md5fail="${OUT_UPDIR}/res_md5sum.err"
 (cd "$OUT_ASMB_DIR" && md5sum -c ./md5_genomes) > "$out_md5chk" 2> "$out_md5fail"
 
+# Summary of update
 # DL実行した数
 num_dl=$(cat "${OUT_UPDIR}/ftp_genomes.url" | wc -l) 
 # DL失敗したものを確認
@@ -223,26 +225,36 @@ tar xvf taxdump.tar.gz
     ゲノムデータを参照データとした解析に利用する。
 
 ```bash
-IN_TYPE='./dat/assembly_summary_genbank_type_prok.txt'
-OUT_TAX='./dat/lineage.txt'
+IN_TYPE="./dat/assembly_summary_filtered_20250518T0224.txt"
+OUT_TAX='./dat/lineage.tsv'
 OUT_TAB='./dat/id_lookup.tsv'
 
-# cut -f1,6 $IN_TYPE | taxonkit lineage -i 2 | taxonkit reformat -i 3 -f "{k};{p};{c};{o};{f};{g};{s};{t}" | cut -f1,2,4 > "$OUT_TAX"
+# Lineageの取得
 cut -f1,6 "$IN_TYPE" | taxonkit reformat2 -I 2 -f "{domain};{phylum};{class};{order};{family};{genus};{species};{strain|subspecies|no rank}" > "$OUT_TAX"
 
-# idルックアップデーブルの作成
-# cat  | awk -F"\t" '{split($3,arr,";"); gsub(" ","_", arr[7]); print $1"\t"arr[7]"_"$1;}' > "$OUT_TAB"
-cut -f1 "$OUT_TAX" | while read -r line; do
-    awk -F"\t" -v gca="$line" '$1==gca{ split($8,arr," "); sub("type strain: ","",$9); sub("strain=","",$9); print $1"\t"arr[1] "_" arr[2] "_"$9 "_" $1}' "$IN_TYPE"
-done > "$OUT_TAB"
+# ID変換表の作成
+cut -f1,8,9 "$IN_TYPE" \
+| awk -F"\t" '{ gsub(/^ +/, "", $2); sub("\\[","-",$2); sub("\\]","-",$2); sub("strain=","",$3); gsub(/ +/,"_", $3); \
+if (match($2, /^(Candidatus +)?[A-Za-z\[\]-]+ +[a-z\[\]]+( +subsp\. +[a-z0-9\-]+)?/, arr)) { \
+  name = arr[0] ; gsub(/ +/, "_", name) ; print $1 "\t" name "_" $3 "_" $1
+    } else { print $1 "\tUNKNOWN_" $3 "_" $1 ; } }' > "$OUT_TAB"
 
 ```
+
 - 以下のようにdeleteやnot foundの警告がでなければO.K.
 ```txt
 22:28:36.509 [WARN] taxid 3238480 not found
 22:28:36.509 [WARN] taxid 3133966 was deleted
 ```
+## blast db / skani-db
+```bash
+find ./genomes -name "./genomes*.fna.gz" \
+| while read -r gca ; do pfx=$(basename $gca | cut -f1,2 -d"_"); gunzip -c $gca ; done \
+| awk -v pfx="$pfx" '/^>/{sub(">",">" pfx "_",$1);print}!/^>/{print}' | gzip > ./blast_db/genki_250508.fna.gz
 
+gunzip -c genki_250508.fna.gz | makeblastdb -in - -out genki250508 -title genki_250508 -dbtype nucl -parse_seqids -hash_index &
+
+```
 
 ## **表現型データの取得**
 - 予めBacDiveのサイト(以下URL)からタイプストレインのリストcsvをダウンロードしておく

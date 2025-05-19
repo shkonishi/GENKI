@@ -287,7 +287,7 @@ function get_gca_genomic () {
 function get_md5_genomic () {
     # Usage: get_gca_genomic ./ftp_genome ./genomes
     if [ $# -eq 0 ]; then 
-        echo "Usage: get_md5_genomic <genomes_ftp_list> [<output_dir>]" >&2
+        echo "Usage: get_md5_genomic <md5_ftp_list> [<output_dir>]" >&2
         echo "Example: get_md5_genomic ./ftp_md5 ./genomes/md5_genomes" >&2
         return 1
     fi
