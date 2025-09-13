@@ -4,18 +4,19 @@ function get_assembly_summary () {
     if [ $# -eq 0 ]; then echo "Usage: get_assembly_summary <gbk|ref> <output>" >&2 ; return 1 ; fi
     local TYPE=$1
     local output=${2:-"assembly_summary_$(date +"%Y%m%dT%H%M").txt"}
+    local err_wget="wget_sum.err"
 
     if [[ "$TYPE" == 'gbk' ]]; then
         url="https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
     elif [[ "$TYPE" == 'ref' ]]; then
         url="https://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt"
     else 
-        echo "[INFO] Select 'gbk' or 'ref' . "
+        echo "[ERROR] Select 'gbk' or 'ref' . "
         return 1
     fi
     cmd="wget -c -O $output $url"
     echo "[CMD] $cmd" >&2
-    #eval "$cmd" 2>$err_wget || { echo "FAIL: " >$err_wget ; return 1 ; }
+    eval "$cmd" 2>$err_wget || { echo "FAIL: " >$err_wget ; return 1 ; }
 
 }
 

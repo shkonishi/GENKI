@@ -7,8 +7,8 @@
 ## **依存**
 - bash
 - taxonkit
-- BacDive (R-package of API Client)
-- (ncbi-genome-download)
+- (試す) BacDive (R-package of API Client)
+- (試す) ncbi-genome-download
 
 ## **ゲノムデータダウンロード**
 ### **assembly summaryの形式**
@@ -50,8 +50,6 @@ cut -f22 assembly_summary_genbank_20250508T2015.txt | sort | uniq -c | sort -nr 
 - `Column 5: refseq_category` RefSeqプロジェクトの分類において、アセンブリが参照ゲノムであるかどうか
 - `Column 12: assembly_level` Complete genome|Chromosome|Scaffold|Contig
 
-
-      
 
 ### genki_download.shを使う場合(現時点では関数を個別に実行する仕様)  
 #### **ダウンロード実行**
@@ -138,7 +136,7 @@ awk -F":" 'BEGIN{ok=0; fail=0; }$2~/OK/{ok++;}$2!~/OK/{fail++;}END{print "OK:" o
 ```bash
 # 作業ディレクトリ構築 & Logファイル定義
 VER=$(date +"%Y%m%dT%H%M")
-OUT_DIR=~/db/GENKI_250506 # 既に作成済みのディレクトリ
+OUT_DIR=~/db/GENKI # 既に作成済みのディレクトリ
 OUT_UPDIR="${OUT_DIR}/update_${VER}"
 [[ ! -d "$OUT_UPDIR" ]] && mkdir -p "${OUT_UPDIR}"
 LOG=${OUT_UPDIR}/${VER}_genki.log
@@ -181,13 +179,11 @@ echo "[INFO] Number of downloads executed: $num_dl" >&2
 echo "[INFO] Check for download failures: " >&2 ; cat "${OUT_UPDIR}/wget_gca.err" >&2
 echo "[INFO] Check MD5 checksum value mismatch: ${res_md5chk}" >&2 ; cat "${OUT_UPDIR}/wget_md5.err" >&2
 
-
-
 ```
 
 ## **データ構造**
 ```sh
-~/db/GENKI_250506/
+~/db/GENKI
 ├── blast_db        # blast データベース
 ├── dat             # フィルタ済みアセンブルデータ
 ├── genomes         # ゲノムデータ
@@ -201,8 +197,23 @@ echo "[INFO] Check MD5 checksum value mismatch: ${res_md5chk}" >&2 ; cat "${OUT_
 │   ├── ftp_md5            # md5ファイルURLリスト
 │   ├── res_md5sum.txt     # md5sumの結果
 │   └── res_md5sum.err     # md5sumを失敗したファイルリスト
-├── skani_db 
-├── update_20250518T1838    #
+├── skani_db                # skaniのスケッチファイル
+├── update_20250518T1838    #　アップデートの内容
+│        ├── 20250518T2328_genki.log
+│        ├── assembly_addition.tsv
+│        ├── assembly_removed.tsv
+│        ├── ftp_genomes.url
+│        ├── ftp_md5.url
+│        ├── genomes
+│        │   └── md5_genomes
+│        ├── removed_202518
+│        │   ├── GCA_001039475.1_ASM103947v1_genomic.fna.gz
+│        │   ├── GCA_042609385.1_ASM4260938v1_genomic.fna.gz
+│        │   └── GCA_900459405.1_41965_B01_genomic.fna.gz
+│        ├── res_md5sum.err
+│        ├── res_md5sum.txt
+│        ├── wget_gca.err
+│        └── wget_md5.err
 ├── wget_gca.err            # wgetのエラーログ
 └── wget_md5.err            # wgetのエラーログ
 
@@ -246,7 +257,7 @@ if (match($2, /^(Candidatus +)?[A-Za-z\[\]-]+ +[a-z\[\]]+( +subsp\. +[a-z0-9\-]+
 22:28:36.509 [WARN] taxid 3238480 not found
 22:28:36.509 [WARN] taxid 3133966 was deleted
 ```
-## blast db / skani-db
+## blast db 
 ```bash
 find ./genomes -name "./genomes*.fna.gz" \
 | while read -r gca ; do pfx=$(basename $gca | cut -f1,2 -d"_"); gunzip -c $gca ; done \
@@ -255,6 +266,9 @@ find ./genomes -name "./genomes*.fna.gz" \
 gunzip -c genki_250508.fna.gz | makeblastdb -in - -out genki250508 -title genki_250508 -dbtype nucl -parse_seqids -hash_index &
 
 ```
+## **skaniのsketchファイルを作成**
+- ANI検索を実行するためのdbを作成しておく
+- 工事中
 
 ## **表現型データの取得**
 - 予めBacDiveのサイト(以下URL)からタイプストレインのリストcsvをダウンロードしておく
@@ -270,8 +284,3 @@ gunzip -c genki_250508.fna.gz | makeblastdb -in - -out genki250508 -title genki_
 in_bdcsv='advsearch_bacdive_2024-08-02.csv'
 Rscript this_script.r "$in_bdcsv" <API_ID> <API_PASSWORD>
 ```
-
-## **skaniのsketchファイルを作成**
-- ANI検索を実行するためのdbを作成しておく
-- 工事中
-
