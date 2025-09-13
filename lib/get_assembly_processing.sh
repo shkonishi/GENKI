@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# ------------------------------------------------------------------------------
+# get_assembly_summary
+# - assembly_summaryをDLする(genbankまたはrefseqを選択)
+# ------------------------------------------------------------------------------
 function get_assembly_summary () {
     if [ $# -eq 0 ]; then echo "Usage: get_assembly_summary <gbk|ref> <output>" >&2 ; return 1 ; fi
     local TYPE=$1
@@ -20,7 +24,7 @@ function get_assembly_summary () {
 
 }
 
-###########################################################################################
+# ------------------------------------------------------------------------------
 # filter_gbsummary : assembly summaryデータを指定条件でフィルタリングする
 # - ここでは細菌・古細菌のタイプマテリアル由来のデータを抽出する条件を指定している
 # - filter_gbsummary <input.txt> > filterd.txt 2> log
@@ -28,7 +32,7 @@ function get_assembly_summary () {
 # - -g|--group  -y|--type 
 #  [type|synonym|pathotype|neotype|reftype|ICTV|ICTVadd]  
 #  [bacteria|viral|archaea|fungi|metagenomes|invertebrate|other|plant|vertebrate_other|vertebrate_mammalian|protozoa]
-###########################################################################################
+# ------------------------------------------------------------------------------
 
 # Returns the position of the specified column name in “assembly_summary”.
 function get_column_index() {
@@ -125,10 +129,10 @@ function filter_gbsummary () {
         ' "$input"
 }
 
-###########################################################################################
+# ------------------------------------------------------------------------------
 # geturl_assembly : アセンブリサマリからアセンブリ及びmd5のurlリンクを取得する
 #  geturl_assembly -i <input> [--out_genome_url <outfile>] [--out_md5_url <outfile>]
-###########################################################################################
+# ------------------------------------------------------------------------------
 function geturl_assembly () {
     if [ $# -eq 0 ]; then echo "Usage: geturl_assembly -i <input> [--out_genome_url <outfile>] [--out_md5_url <outfile>]" >&2 ; return 1 ; fi
 
@@ -155,11 +159,11 @@ function geturl_assembly () {
     return 0
 }
 
-###########################################################################################
+# ------------------------------------------------------------------------------
 # update_summary : 過去データと追加データの比較
 # Usage: update_summary -o <assembly_summary_old> -n <assembly_summary_new> [-r <removed_id>] [-a <added_id>]
 # Example: update_summary -o old.txt -n new.txt -r assembly_removed.tsv -a assembly_addition.tsv
-###########################################################################################
+# ------------------------------------------------------------------------------
 function update_summary () {
     if [ $# -eq 0 ]; then 
         echo "Usage: update_summary -o <assembly_summary_old> -n <assembly_summary_new> [-r <removed_id>] [-a <added_id>]" >&2 
@@ -247,9 +251,7 @@ function update_summary () {
     rm -f "$tmp_old_ids" "$tmp_new_ids"
 }
 
-###########################################################################################
-# get_assembly_summary
-# - assembly_summaryをDLする(genbankまたはrefseqを選択)
+# ------------------------------------------------------------------------------
 # get_gca_genomic: 
 # - Usage: get_gca_genomic ./ftp_genome ./genomes
 # - urlリンクファイルをもとにしてゲノムデータをダウンロードする
@@ -259,7 +261,7 @@ function update_summary () {
 # - urlリンクファイルをもとにmd5データをダウンロードした後、ゲノムデータのmd5値のみ抽出
 # - 登録がsubmitterにより取り消された等の場合でもmd5checksums.txtには記述が存在するため、
 #   md5checksums.txtをダンロードした後にその内容をチェックする
-###########################################################################################
+# ------------------------------------------------------------------------------
 function get_gca_genomic () {
     # Usage: get_gca_genomic ./ftp_genome ./genomes
     if [ $# -eq 0 ]; then echo "Usage: get_gca_genomic <genomes_ftp_list> [<output_dir>] " >&2  ; return 1 ; fi

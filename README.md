@@ -83,7 +83,7 @@ source ../lib/get_assembly_processing.sh
 
 # 作業ディレクトリ構築 & Logファイル定義
 VER=$(date +"%Y%m%dT%H%M")
-OUT_DIR="GENKI_${VER}"
+OUT_DIR="update_${VER}"
 [[ ! -d "$OUT_DIR" ]] && mkdir -p "${OUT_DIR}"
 LOG=${VER}_genki.log
 
@@ -132,6 +132,7 @@ awk -F":" 'BEGIN{ok=0; fail=0; }$2~/OK/{ok++;}$2!~/OK/{fail++;}END{print "OK:" o
 ```
 
 - 追加登録のみをダウンロードする場合
+- リストから除外された登録についても確認=>リストを確認して手動で削除
 
 ```bash
 # 作業ディレクトリ構築 & Logファイル定義
@@ -184,6 +185,8 @@ echo "[INFO] Check MD5 checksum value mismatch: ${res_md5chk}" >&2 ; cat "${OUT_
 ## **データ構造**
 ```sh
 ~/db/GENKI
+├── .genki          # アセンブリサマリ一時ファイル
+│       └── assembly_summary_genbank_20250518T0224.txt
 ├── blast_db        # blast データベース
 ├── dat             # フィルタ済みアセンブルデータ
 ├── genomes         # ゲノムデータ
@@ -208,7 +211,6 @@ echo "[INFO] Check MD5 checksum value mismatch: ${res_md5chk}" >&2 ; cat "${OUT_
 │        │   └── md5_genomes
 │        ├── removed_202518
 │        │   ├── GCA_001039475.1_ASM103947v1_genomic.fna.gz
-│        │   ├── GCA_042609385.1_ASM4260938v1_genomic.fna.gz
 │        │   └── GCA_900459405.1_41965_B01_genomic.fna.gz
 │        ├── res_md5sum.err
 │        ├── res_md5sum.txt
